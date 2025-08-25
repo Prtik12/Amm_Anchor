@@ -124,5 +124,18 @@ impl<'info> Withdraw<'info> {
         transfer(ctx, amount)
     }
 
-    
+    pub fn burn_lp_tokens(&mut self, amount: u64) -> Result<()> {
+
+        let cpi_program = self.token_program.to_account_info();
+
+        let cpi_accounts = Burn {
+            mint: self.mint_lp.to_account_info(),
+            from: self.user_lp.to_account_info(),
+            authority: self.user.to_account_info(),
+        };
+
+        let ctx = CpiContext::new(cpi_program, cpi_accounts);
+
+        burn(ctx, amount)
+    }
 }
