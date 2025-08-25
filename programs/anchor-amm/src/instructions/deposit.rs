@@ -67,3 +67,40 @@ pub struct Deposit<'info> {
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
 }
+
+impl<'info> Deposit<'info> {
+    pub fn deposit (
+        &mut self,
+        amount: u64,
+        max_x: u64,
+        max_y: u64,
+    ) -> Result<()> {
+
+        require!(self.config.locked == false, AmmError::PoolLocked);
+        require!(amount > 0, AmmError::InvalidAmount);
+        let (x, y) = match
+        self.mint.lp.supply == 0
+        && self.vault_x.amount == 0
+        && self.vault_y.amount == 0 {
+
+            true => (max_x, max_y),
+            false => {
+                let amounts = ConstantProduct::xy_deposit_amounts_from_l(
+                    self.vault_x.amount,
+                    self.vault_y.amount,
+                    self.mint_lp.supply,
+                    amount,
+                    6
+                ).map_err(AmmError::from)?;
+                (amounts.x, amounts.y)
+            }
+    };
+
+    require!(x <= max_x, AmmError::SlippageExceeded);
+    self.deposit_tokens(true, x)?;
+    self.desposit_tokens(false, y)?;
+    self.mint_lp_tokens(amount)?;
+
+    Ok(())
+    )
+}
