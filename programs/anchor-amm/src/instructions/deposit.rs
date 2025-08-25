@@ -102,5 +102,46 @@ impl<'info> Deposit<'info> {
     self.mint_lp_tokens(amount)?;
 
     Ok(())
-    )
+}
+
+pub fn deposit_tokens(&mut self, is_x: bool, amount: u64) -> Result<()> {
+    let(from, to) = match is_x {
+        true => (self.user_x.to_account_info(), self.vault_x.to_account_info()),
+        false => (self.user_y.to_account_info(), self.vault_y.to_account_info()),
+    };
+
+    let cpi_program = self.token_program.to_account_info();
+
+    let cpi_accounts = Transfer {
+        from,
+        to,
+        authority: self.user.to_account_info(),
+    };
+
+    let ctx = CpiContext::new(cpi_program, cpi_accounts);
+
+    transfer(ctx, amount)
+}
+
+pub fn mint_lp_tokens(&mut self, amount: u64) -> Result<()> {
+    let cpi_program = self.token_program.to_account_info();
+
+    let cpi_accounts = MintTo {
+        mint: self.mint_lp.to_account_info(),
+        to: self.user_lp.to_account_info(),
+        authority: self.config.to_account_info(),
+    };
+
+    let seeds = &[
+        &b"config"[..],
+        &self.config.seed.to_le_bytes(),
+        &[self.config.config_bump],
+    ];
+
+    let signer = &[&seeds[..]];
+
+    let ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer);
+
+    mint_to(ctx, amount)
+}
 }
