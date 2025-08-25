@@ -70,5 +70,59 @@ pub struct Withdraw<'info> {
     pub token_program: Program<'info, Token>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
+}
 
+impl<'info> Withdraw<'info> {
+    pub fn withdraw(&mut self, amount: u64, min_x: u64, min_y: u64) -> Result<()> {
+
+            require!(self.config.locked == false, AmmError::PoolLocked);
+            require!(amount != 0, AmmError::InvalidAmount);
+
+            let amounts = ConstantProduct::xy_deposit_amounts_from_l(
+                self.vault_x.amount,
+                self.vault_y.amount,
+                self.mint_lp.supply,
+                amount,
+                6
+            ).map_err(AmmError::from)?;
+
+            require!(amounts.x >= min_x && amounts.y >= min_y, AmmError::SlippageExceded);
+
+            self.withdraw_tokens(true, amounts.x)?;
+            self.withdraw_tokens(false, amounts.y)?;
+            self.burn_lp_tokens(amount)?;
+
+            Ok(())
+    }
+
+    pub fn withdraw_tokens(
+        &mut self,
+        is_x: bool,
+        amount: u64,
+    ) -> Result<()> {
+        let(from, to) = match is_x {
+            true => (self.vault_x.to_account_info(), self.user_x.to_account_info()),
+            false => (self.vault_y.to_account_info(), self.user_y.to_account_info())
+        };
+
+        let cpi_accounts = Transfer {
+            from,
+            to,
+            authority: self.config.to_account_info()
+        };
+
+        let seeds = &[
+            &b"config"[..],
+            &self.config.seed.to_le_bytes(),
+            &[self.config.config_bump],
+        ];
+
+        let signer_seeds = &[&seeds[..]];
+
+        let ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds);
+
+        transfer(ctx, amount)
+    }
+
+    
 }
