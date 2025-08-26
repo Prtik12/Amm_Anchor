@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use crate::{error::AMMError, state::Config};
+use crate::{error::AmmError, state::Config};
 
 use anchor_spl::{
     associated_token::AssociatedToken,
@@ -24,7 +24,7 @@ pub struct Deposit<'info> {
 
     #[account(
         mut,
-        seeds = [b"lp", config.key.as_ref()],
+        seeds = [b"lp", config.key().as_ref()],
         bump = config.lp_bump,
     )]
     pub mint_lp: Account<'info, Mint>,
@@ -45,14 +45,14 @@ pub struct Deposit<'info> {
 
     #[account(
         mut,
-        associated_token::mint = mint_x
+        associated_token::mint = mint_x,
         associated_token::authority = user,
     )]
     pub user_x: Account<'info, TokenAccount>,
 
     #[account(
         mut,
-        associated_token::mint = mint_y
+        associated_token::mint = mint_y,
         associated_token::authority = user,
     )]
     pub user_y: Account<'info, TokenAccount>,
@@ -80,7 +80,7 @@ impl<'info> Deposit<'info> {
         require!(self.config.locked == false, AmmError::PoolLocked);
         require!(amount > 0, AmmError::InvalidAmount);
         let (x, y) = match
-        self.mint.lp.supply == 0
+        self.mint_lp.supply == 0
         && self.vault_x.amount == 0
         && self.vault_y.amount == 0 {
 
@@ -99,7 +99,7 @@ impl<'info> Deposit<'info> {
 
     require!(x <= max_x, AmmError::SlippageExceeded);
     self.deposit_tokens(true, x)?;
-    self.desposit_tokens(false, y)?;
+    self.deposit_tokens(false, y)?;
     self.mint_lp_tokens(amount)?;
 
     Ok(())
