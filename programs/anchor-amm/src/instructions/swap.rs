@@ -6,7 +6,7 @@ use anchor_spl::{
 };
 
 use crate::{AmmError, state::Config};
-use constant_product_curve::{ConstantProduct, LiquidityCurve};
+use constant_product_curve::{ConstantProduct, LiquidityPair};
 
 #[derive(Accounts)]
 pub struct Swap<'info> {
@@ -26,7 +26,7 @@ pub struct Swap<'info> {
 
     #[account(
         mut,
-        seeds = [b"lp", config.key.as_ref()],
+        seeds = [b"lp", config.key().as_ref()],
         bump = config.lp_bump,
     )]
     pub mint_lp: Account<'info, Mint>,
@@ -71,8 +71,8 @@ impl<'info> Swap<'info> {
         amount: u64,
         min: u64,
     ) -> Result<()> {
-        require!(self.config.locked == false, AMMError::PoolLocked);
-        require!(amount != 0, AMMError::InvalidAmount);
+        require!(self.config.locked == false, AmmError::PoolLocked);
+        require!(amount != 0, AmmError::InvalidAmount);
 
         let mut curve = ConstantProduct::init(
             self.vault_x.amount,
@@ -80,16 +80,16 @@ impl<'info> Swap<'info> {
             self.mint_lp.supply,
             self.config.fee,
             Some(6)
-        ).map_err(AMMError::from)?;
+        ).map_err(AmmError::from)?;
 
         let pair = match is_x {
             true => LiquidityPair::X,
             false => LiquidityPair::Y
         };
 
-        let response = curve.swap(pair, amount, min).map_err(AMMError::from)?;
+        let response = curve.swap(pair, amount, min).map_err(AmmError::from)?;
 
-        require!(response.deposit != 0 && response.withdraw != 0, AMMError::InvalidAmount);
+        require!(response.deposit != 0 && response.withdraw != 0, AmmError::InvalidAmount);
 
         self.deposit_token(is_x, response.deposit)?;
         self.withdraw_token(!is_x, response.withdraw)?;
