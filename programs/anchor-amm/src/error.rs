@@ -29,10 +29,10 @@ impl From<CurveError> for AmmError {
             CurveError::InvalidPrecision      => AmmError::InvalidPrecision,
             CurveError::Overflow              => AmmError::Overflow,
             CurveError::Underflow             => AmmError::Underflow,
-            CurveError::InvalidFeeAmount      => AmmError::InvalidFee,
+            CurveError::InvalidFeeAmount      => AmmError::InvalidAmount,
             CurveError::InsufficientBalance   => AmmError::Insufficientbalance,
             CurveError::ZeroBalance           => AmmError::ZeroBalance,
-            CurveError::SlippageLimitExceeded => AmmError::SlippageExceded,
+            CurveError::SlippageLimitExceeded => AmmError::SlippageExceeded,
         }
     }
 }
