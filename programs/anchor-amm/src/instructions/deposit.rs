@@ -6,6 +6,8 @@ use anchor_spl::{
     token::{mint_to, transfer, Mint, MintTo, Token, TokenAccount, Transfer}
 };
 
+use constant_product_curve::ConstantProduct;
+
 #[derive(Accounts)]
 pub struct Deposit<'info> {
     #[account(mut)]
@@ -86,7 +88,7 @@ impl<'info> Deposit<'info> {
 
             true => (max_x, max_y),
             false => {
-                let amounts = ConstantProduct::xy_deposit_amounts_from_l(
+                let amounts= ConstantProduct::xy_deposit_amounts_from_l(
                     self.vault_x.amount,
                     self.vault_y.amount,
                     self.mint_lp.supply,
