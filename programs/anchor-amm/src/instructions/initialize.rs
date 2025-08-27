@@ -4,7 +4,7 @@ use anchor_spl::{
     token::{Token, TokenAccount, Mint},
 };
 
-use create::Config;
+use crate::Config;
 
 #[derive(Accounts)]
 #[instruction(seed: u64)]
@@ -27,7 +27,7 @@ pub struct Initialize <'info> {
     #[account(
         init,
         payer = admin,
-        associated_token::mint = minit_x,
+        associated_token::mint = mint_x,
         associated_token::authority = config,
     )]
     pub vault_x: Account<'info, TokenAccount>,
@@ -43,12 +43,16 @@ pub struct Initialize <'info> {
     #[account(
         init,
         payer = admin,
-        seeds = [b"lp", config.key.as_ref()],
+        seeds = [b"lp", config.key().as_ref()],
         bump,
-        token::mint = 6,
-        token::authority = config,
+        mint::decimals = 6,
+        mint::authority = config,
     )]
     pub lp_mint: Account<'info, Mint>,
+
+    pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
+    pub system_program: Program<'info, System>,
 }
 
 impl <'info> Initialize<'info> {
@@ -66,8 +70,8 @@ impl <'info> Initialize<'info> {
             mint_y: self.mint_y.key(),
             fee,
             locked: false,
-            config_bump: bumps.config_bump,
-            lp_bump: bumps.lp_mint_bump,
+            config_bump: bumps.config,
+            lp_bump: bumps.lp_mint,
         });
 
 
