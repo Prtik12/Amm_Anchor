@@ -3,7 +3,7 @@ use crate::{AmmError, state::Config};
 
 use anchor_spl::{
     associated_token::AssociatedToken,
-    token::{transfer, Burn, Mint, Token, TokenAccount, Transfer},
+    token::{transfer, Burn, Mint, Token, TokenAccount, Transfer, burn},
 };
 
 use constant_product_curve::ConstantProduct;
@@ -27,7 +27,7 @@ pub struct Withdraw<'info> {
 
     #[account(
         mut,
-        seeds = [b"lp", config.key.as_ref()],
+        seeds = [b"lp", config.key().as_ref()],
         bump = config.lp_bump,
     )]
     pub mint_lp: Account<'info, Mint>,
@@ -86,7 +86,7 @@ impl<'info> Withdraw<'info> {
                 6
             ).map_err(AmmError::from)?;
 
-            require!(amounts.x >= min_x && amounts.y >= min_y, AmmError::SlippageExceded);
+            require!(amounts.x >= min_x && amounts.y >= min_y, AmmError::SlippageExceeded);
 
             self.withdraw_tokens(true, amounts.x)?;
             self.withdraw_tokens(false, amounts.y)?;
@@ -104,6 +104,8 @@ impl<'info> Withdraw<'info> {
             true => (self.vault_x.to_account_info(), self.user_x.to_account_info()),
             false => (self.vault_y.to_account_info(), self.user_y.to_account_info())
         };
+
+        let cpi_program = self.token_program.to_account_info();
 
         let cpi_accounts = Transfer {
             from,
