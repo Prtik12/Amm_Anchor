@@ -1,211 +1,246 @@
 import * as anchor from "@coral-xyz/anchor";
-import { BN } from "@coral-xyz/anchor";
-import { Program } from "@coral-xyz/anchor";
-import { AnchorAmm } from "../target/types/anchor_amm";
-import { PublicKey, Commitment, Keypair, SystemProgram, Connection} from "@solana/web3.js";
-import { ASSOCIATED_TOKEN_PROGRAM_ID as associatedTokenProgram, TOKEN_PROGRAM_ID as tokenProgram, createMint, createAccount, mintTo, getAssociatedTokenAddress, TOKEN_PROGRAM_ID, getOrCreateAssociatedTokenAccount } from "@solana/spl-token"
-import { randomBytes } from "crypto"
+import { Program, BN } from "@coral-xyz/anchor";
+import { AmmAnchor } from "../target/types/amm_anchor";
+import {
+  PublicKey,
+  Keypair,
+  SystemProgram,
+  LAMPORTS_PER_SOL,
+} from "@solana/web3.js";
+import {
+  ASSOCIATED_TOKEN_PROGRAM_ID as associatedTokenProgram,
+  TOKEN_PROGRAM_ID as tokenProgram,
+  createMint,
+  mintTo,
+  getOrCreateAssociatedTokenAccount,
+  getAssociatedTokenAddressSync,
+} from "@solana/spl-token";
 import { assert } from "chai";
-import { ASSOCIATED_PROGRAM_ID } from "@coral-xyz/anchor/dist/cjs/utils/token";
-import { min } from "bn.js";
 
-const commitment: Commitment = "confirmed";
-
-describe("anchor-amm", () => {
+describe("AMM Tests", () => {
   // Configure the client to use the local cluster.
-  anchor.setProvider(anchor.AnchorProvider.env());
-
-  const program = anchor.workspace.anchorAmm as Program<AnchorAmm>;
-
-  const provider = anchor.getProvider();
-
+  const provider = anchor.AnchorProvider.env();
+  anchor.setProvider(provider);
+  const program = anchor.workspace.AmmAnchor as Program<AmmAnchor>;
   const connection = provider.connection;
 
-  const [admin, user] = [new Keypair(), new Keypair()];
+  // Keypairs
+  const admin = Keypair.generate();
+  const user = Keypair.generate();
 
-  const seed = new BN(randomBytes(8));
-  const fee = 30;
+  // Constants
   const DECIMALS = 6;
+  const fee = 300; // 3% fee
+  // Use a fixed seed for predictable addresses and test runs
+  const seed = new BN(1234);
 
-  const config = PublicKey.findProgramAddressSync([Buffer.from("config"), seed.toArrayLike(Buffer, "le", 8)], program.programId)[0];
+  // PDAs
+  const [config] = PublicKey.findProgramAddressSync(
+    [
+      Buffer.from("config"),
+      seed.toArrayLike(Buffer, "le", 8), // ✅ CORRECTED: Removed admin.publicKey from seeds
+    ],
+    program.programId
+  );
 
-  //mint
-  let mint_x: PublicKey;
-  let mint_y: PublicKey;
-  let mint_lp = PublicKey.findProgramAddressSync(
+  const [mint_lp] = PublicKey.findProgramAddressSync(
     [Buffer.from("lp"), config.toBuffer()],
     program.programId
-  )[0]; 
+  );
 
-  //vault
+  // Account Public Keys
+  let mint_x: PublicKey;
+  let mint_y: PublicKey;
   let vault_x: PublicKey;
   let vault_y: PublicKey;
-
-  //user
   let user_x: PublicKey;
   let user_y: PublicKey;
   let user_lp: PublicKey;
 
-  before("Airdrop and create Mints", async () => {
-
-    await Promise.all([admin, user].map(async (k) => {
-    return await anchor.getProvider().connection.requestAirdrop(k.publicKey, 100 * anchor.web3.LAMPORTS_PER_SOL)
-
-  })).then(confirmTxs);
-
-  mint_x = await createMint(
-    connection,
-    admin,
-    admin.publicKey,
-    admin.publicKey,
-    DECIMALS
-  )
-
-  mint_y = await createMint(
-    connection,
-    admin,
-    admin.publicKey,
-    admin.publicKey,
-    DECIMALS
-  )
-
-  vault_x = await getAssociatedTokenAddress(
-    mint_x,
-    config,
-    true
-  )
-
-  vault_y = await getAssociatedTokenAddress(
-    mint_y,
-    config,
-    true
-  )
-
-  user_x = (await getAssociatedTokenAddress(
-    connection,
-    user,
-    mint_x,
-    user.publicKey,
-    true
-  )).address
-
-  user_y = (await getAssociatedTokenAddress(
-    connection,
-    user,
-    mint_y,
-    user.publicKey,
-    true
-  )).address
-
-  try{
-    const mintX = await mintTo(
-      connection,
-      admin,
-      mint_x,
-      user_x,
-      admin.publicKey,
-      1000 * DECIMALS
-    )
-
-    console.log("mintx", mintX)
-  }catch(e){
-    console.log("error while mint x", e);
-  }
-
-  const mintY = await mintTo(
-    connection,
-    admin,
-    mint_y,
-    user_y,
-    admin.publicKey,
-    1000 * DECIMALS
-  )
-  console.log("minty", mintY)
-})
-
-let listenerIds: number[]  = [];
-before(() => {
-  const initializeListener = program.addEventListener("initializeEvent", (event, slot, signature) => {
-    console.log("Initialize Event :", event, "Slot :", slot, "Signature :", signature);
+  before("Setup environment", async () => {
+    // Request airdrops for admin and user
+    const adminAirdropSig = await provider.connection.requestAirdrop(admin.publicKey, 10 * LAMPORTS_PER_SOL);
+    const userAirdropSig = await provider.connection.requestAirdrop(user.publicKey, 10 * LAMPORTS_PER_SOL);
+  
+    // ✅ ADDED: Wait for airdrops to be confirmed
+    const latestBlockhash = await connection.getLatestBlockhash();
+    await connection.confirmTransaction({
+      blockhash: latestBlockhash.blockhash,
+      lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+      signature: adminAirdropSig,
+    });
+    await connection.confirmTransaction({
+      blockhash: latestBlockhash.blockhash,
+      lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+      signature: userAirdropSig,
+    });
+  
+    // Create token mints
+    mint_x = await createMint(connection, admin, admin.publicKey, null, DECIMALS);
+    mint_y = await createMint(connection, admin, admin.publicKey, null, DECIMALS);
+  
+    // Get vault addresses (ATAs owned by the 'config' PDA)
+    vault_x = getAssociatedTokenAddressSync(mint_x, config, true);
+    vault_y = getAssociatedTokenAddressSync(mint_y, config, true);
+  
+    // Create user's token accounts
+    user_x = (await getOrCreateAssociatedTokenAccount(connection, user, mint_x, user.publicKey)).address;
+    user_y = (await getOrCreateAssociatedTokenAccount(connection, user, mint_y, user.publicKey)).address;
+  
+    // Mint initial tokens to the user
+    await mintTo(connection, admin, mint_x, user_x, admin, 1000 * 10 ** DECIMALS);
+    await mintTo(connection, admin, mint_y, user_y, admin, 1000 * 10 ** DECIMALS);
   });
 
-  listenerIds.push(initializeListener);
+  it("Initialize pool", async () => {
+    await program.methods
+      .initialize(seed, fee, admin.publicKey)
+      .accountsStrict({
+        admin: admin.publicKey,
+        mintX: mint_x,
+        mintY: mint_y,
+        lpMint: mint_lp,
+        vaultX: vault_x,
+        vaultY: vault_y,
+        config: config,
+        tokenProgram,
+        associatedTokenProgram,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([admin])
+      .rpc();
 
-  const depositListener = program.addEventListener("depositEvent", (event, slot, signature) => {
-    console.log("Deposit Event :", event, "Slot :", slot, "Signature :", signature);
+    const configAccount = await program.account.config.fetch(config);
+    assert.ok(configAccount.authority.equals(admin.publicKey));
+    assert.equal(configAccount.fee, fee);
+    assert.equal(configAccount.locked, false);
   });
 
-  listenerIds.push(depositListener);
+  it("Deposit liquidity", async () => {
+    // Create the user's LP token account now that the LP mint is initialized
+    user_lp = (await getOrCreateAssociatedTokenAccount(connection, user, mint_lp, user.publicKey)).address;
 
-  const swapListener = program.addEventListener("swapEvent", (event, slot, signature) => {
-    console.log("Swap Event :", event, "Slot :", slot, "Signature :", signature);
+    const depositAmount = new BN(100 * 10 ** DECIMALS);
+    const maxX = new BN(50 * 10 ** DECIMALS);
+    const maxY = new BN(50 * 10 ** DECIMALS);
+
+    await program.methods
+      .deposit(depositAmount, maxX, maxY)
+      .accountsStrict({
+        user: user.publicKey,
+        mintX: mint_x,
+        mintY: mint_y,
+        config: config,
+        mintLp: mint_lp,
+        vaultX: vault_x,
+        vaultY: vault_y,
+        userX: user_x,
+        userY: user_y,
+        userLp: user_lp,
+        tokenProgram,
+        associatedTokenProgram,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([user])
+      .rpc();
+
+    const userLpBalance = await connection.getTokenAccountBalance(user_lp);
+    assert.equal(userLpBalance.value.amount, depositAmount.toString());
   });
-  listenerIds.push(swapListener);
-
-  const lockListener = program.addEventListener("lockEvent", (event, slot, signature) => {
-    console.log("Lock Event :", event, "Slot :", slot, "Signature :", signature);
-  });
-  listenerIds.push(lockListener);
-
-  const unlockListener = program.addEventListener("unlockEvent", (event, slot, signature) => {
-    console.log("Unlock Event :", event, "Slot :", slot, "Signature :", signature);
-  });
-  listenerIds.push(unlockListener);
-
-  const withdrawListener = program.addEventListener("withdrawEvent", (event, slot, signature) => {
-    console.log("Withdraw Event :", event, "Slot :", slot, "Signature :", signature);
-  });
-  listenerIds.push(withdrawListener);
-
-})
-
-  it("Is initialized!", async () => {
-
-    const tx = await program.methods.initialize(
-      seed,
-      fee,
-      admin.publicKey,
-    )
-    .accountsStrict({
-      admin: admin.publicKey,
-      mintX: mint_x,
-      mintY: mint_y,
-      mintLp: mint_lp,
-      vaultX: vault_x,
-      vaultY: vault_y,
-      config: config,
-      tokenProgram,
-      associatedTokenProgram,
-      systemProgram: SystemProgram.programId,
-    })
-    .signers([admin])
-    .rpc()
-    console.log("Your transaction signature", tx);
-  });
-
-  it("Lock Pool", async () => {
-    const tx = await program.methods.lock().accountsStrict({
-      user: user.publicKey,
-      config: config,
-    })
-    .signers([user])
-    .rpc()
-  })
-
-  it("Unlock Pool", async () => {
-    const tx = await program.methods.unlock().accountsStrict({
-      user: user.publicKey,
-      config: config,
-    })
-    .signers([user])
-    .rpc()
-  })
 
   it("Swap X for Y", async () => {
-    const tx = await program.methods.swap(
-      true,
-      new BN(10),
-      new BN(6)
+    const swapAmount = new BN(5 * 10 ** DECIMALS);
+    const minOut = new BN(1); // Minimum amount doesn't need to be scaled
 
+    const userYBefore = await connection.getTokenAccountBalance(user_y);
 
+    await program.methods
+      .swap(true, swapAmount, minOut) // is_x = true
+      .accountsStrict({
+        user: user.publicKey,
+        mintX: mint_x,
+        mintY: mint_y,
+        config: config,
+        mintLp: mint_lp,
+        vaultX: vault_x,
+        vaultY: vault_y,
+        userX: user_x,
+        userY: user_y,
+        tokenProgram,
+        associatedTokenProgram,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([user])
+      .rpc();
+
+    const userYAfter = await connection.getTokenAccountBalance(user_y);
+    assert.ok(BigInt(userYAfter.value.amount) > BigInt(userYBefore.value.amount));
+  });
+
+  it("Lock and unlock pool", async () => {
+    // Lock the pool
+    await program.methods
+      .lock()
+      .accountsStrict({
+        user: admin.publicKey,
+        config: config,
+      })
+      .signers([admin])
+      .rpc();
+
+    let configAccount = await program.account.config.fetch(config);
+    assert.equal(configAccount.locked, true);
+
+    // Unlock the pool
+    await program.methods
+      .unlock()
+      .accountsStrict({
+        user: admin.publicKey,
+        config: config,
+      })
+      .signers([admin])
+      .rpc();
+
+    configAccount = await program.account.config.fetch(config);
+    assert.equal(configAccount.locked, false);
+  });
+
+  it("Withdraw liquidity", async () => {
+    const userLpBefore = await connection.getTokenAccountBalance(user_lp);
+    const userXBefore = await connection.getTokenAccountBalance(user_x);
+    const userYBefore = await connection.getTokenAccountBalance(user_y);
+    
+    // Withdraw half of the LP tokens
+    const withdrawAmount = new BN(userLpBefore.value.amount).div(new BN(2));
+    const minX = new BN(1);
+    const minY = new BN(1);
+
+    await program.methods
+      .withdraw(withdrawAmount, minX, minY)
+      .accountsStrict({
+        user: user.publicKey,
+        mintX: mint_x,
+        mintY: mint_y,
+        config: config,
+        mintLp: mint_lp,
+        vaultX: vault_x,
+        vaultY: vault_y,
+        userX: user_x,
+        userY: user_y,
+        userLp: user_lp,
+        tokenProgram,
+        associatedTokenProgram,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([user])
+      .rpc();
+
+    const userLpAfter = await connection.getTokenAccountBalance(user_lp);
+    const userXAfter = await connection.getTokenAccountBalance(user_x);
+    const userYAfter = await connection.getTokenAccountBalance(user_y);
+
+    assert.ok(BigInt(userLpAfter.value.amount) < BigInt(userLpBefore.value.amount));
+    assert.ok(BigInt(userXAfter.value.amount) > BigInt(userXBefore.value.amount));
+    assert.ok(BigInt(userYAfter.value.amount) > BigInt(userYBefore.value.amount));
+  });
 });

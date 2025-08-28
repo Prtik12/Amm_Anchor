@@ -8,7 +8,7 @@ use crate::Config;
 
 #[derive(Accounts)]
 #[instruction(seed: u64)]
-pub struct Initialize <'info> {
+pub struct Initialize<'info> {
     #[account(mut)]
     pub admin: Signer<'info>,
 
@@ -18,7 +18,7 @@ pub struct Initialize <'info> {
     #[account(
         init,
         payer = admin,
-        seeds = [b"config", config.key.as_ref()],
+        seeds = [b"config", &seed.to_le_bytes()[..]],
         bump,
         space = Config::INIT_SPACE,
     )]
@@ -55,17 +55,17 @@ pub struct Initialize <'info> {
     pub system_program: Program<'info, System>,
 }
 
-impl <'info> Initialize<'info> {
+impl<'info> Initialize<'info> {
     pub fn initialize(
         &mut self,
         seed: u64,
         fee: u16,
-        authority: Option<Pubkey>,
+        authority: Option<Pubkey>,      
         bumps: &InitializeBumps
     ) -> Result<()> {
         self.config.set_inner( Config {
             seed,
-            authority,
+            authority,                   
             mint_x: self.mint_x.key(),
             mint_y: self.mint_y.key(),
             fee,
@@ -73,7 +73,6 @@ impl <'info> Initialize<'info> {
             config_bump: bumps.config,
             lp_bump: bumps.lp_mint,
         });
-
 
         Ok(())
     }
