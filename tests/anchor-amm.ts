@@ -18,27 +18,22 @@ import {
 import { assert } from "chai";
 
 describe("AMM Tests", () => {
-  // Configure the client to use the local cluster.
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
   const program = anchor.workspace.AmmAnchor as Program<AmmAnchor>;
   const connection = provider.connection;
 
-  // Keypairs
   const admin = Keypair.generate();
   const user = Keypair.generate();
 
-  // Constants
   const DECIMALS = 6;
-  const fee = 300; // 3% fee
-  // Use a fixed seed for predictable addresses and test runs
+  const fee = 300; 
   const seed = new BN(1234);
 
-  // PDAs
   const [config] = PublicKey.findProgramAddressSync(
     [
       Buffer.from("config"),
-      seed.toArrayLike(Buffer, "le", 8), // ✅ CORRECTED: Removed admin.publicKey from seeds
+      seed.toArrayLike(Buffer, "le", 8), 
     ],
     program.programId
   );
@@ -48,7 +43,6 @@ describe("AMM Tests", () => {
     program.programId
   );
 
-  // Account Public Keys
   let mint_x: PublicKey;
   let mint_y: PublicKey;
   let vault_x: PublicKey;
@@ -58,11 +52,9 @@ describe("AMM Tests", () => {
   let user_lp: PublicKey;
 
   before("Setup environment", async () => {
-    // Request airdrops for admin and user
     const adminAirdropSig = await provider.connection.requestAirdrop(admin.publicKey, 10 * LAMPORTS_PER_SOL);
     const userAirdropSig = await provider.connection.requestAirdrop(user.publicKey, 10 * LAMPORTS_PER_SOL);
   
-    // ✅ ADDED: Wait for airdrops to be confirmed
     const latestBlockhash = await connection.getLatestBlockhash();
     await connection.confirmTransaction({
       blockhash: latestBlockhash.blockhash,
@@ -75,19 +67,15 @@ describe("AMM Tests", () => {
       signature: userAirdropSig,
     });
   
-    // Create token mints
     mint_x = await createMint(connection, admin, admin.publicKey, null, DECIMALS);
     mint_y = await createMint(connection, admin, admin.publicKey, null, DECIMALS);
   
-    // Get vault addresses (ATAs owned by the 'config' PDA)
     vault_x = getAssociatedTokenAddressSync(mint_x, config, true);
     vault_y = getAssociatedTokenAddressSync(mint_y, config, true);
   
-    // Create user's token accounts
     user_x = (await getOrCreateAssociatedTokenAccount(connection, user, mint_x, user.publicKey)).address;
     user_y = (await getOrCreateAssociatedTokenAccount(connection, user, mint_y, user.publicKey)).address;
   
-    // Mint initial tokens to the user
     await mintTo(connection, admin, mint_x, user_x, admin, 1000 * 10 ** DECIMALS);
     await mintTo(connection, admin, mint_y, user_y, admin, 1000 * 10 ** DECIMALS);
   });
@@ -117,7 +105,6 @@ describe("AMM Tests", () => {
   });
 
   it("Deposit liquidity", async () => {
-    // Create the user's LP token account now that the LP mint is initialized
     user_lp = (await getOrCreateAssociatedTokenAccount(connection, user, mint_lp, user.publicKey)).address;
 
     const depositAmount = new BN(100 * 10 ** DECIMALS);
@@ -150,12 +137,12 @@ describe("AMM Tests", () => {
 
   it("Swap X for Y", async () => {
     const swapAmount = new BN(5 * 10 ** DECIMALS);
-    const minOut = new BN(1); // Minimum amount doesn't need to be scaled
+    const minOut = new BN(1); 
 
     const userYBefore = await connection.getTokenAccountBalance(user_y);
 
     await program.methods
-      .swap(true, swapAmount, minOut) // is_x = true
+      .swap(true, swapAmount, minOut) 
       .accountsStrict({
         user: user.publicKey,
         mintX: mint_x,
@@ -178,7 +165,6 @@ describe("AMM Tests", () => {
   });
 
   it("Lock and unlock pool", async () => {
-    // Lock the pool
     await program.methods
       .lock()
       .accountsStrict({
@@ -191,7 +177,6 @@ describe("AMM Tests", () => {
     let configAccount = await program.account.config.fetch(config);
     assert.equal(configAccount.locked, true);
 
-    // Unlock the pool
     await program.methods
       .unlock()
       .accountsStrict({
@@ -210,7 +195,6 @@ describe("AMM Tests", () => {
     const userXBefore = await connection.getTokenAccountBalance(user_x);
     const userYBefore = await connection.getTokenAccountBalance(user_y);
     
-    // Withdraw half of the LP tokens
     const withdrawAmount = new BN(userLpBefore.value.amount).div(new BN(2));
     const minX = new BN(1);
     const minY = new BN(1);
